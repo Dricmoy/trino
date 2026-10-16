@@ -22,11 +22,18 @@ import static io.trino.spi.type.DateTimeEncoding.unpackMillisUtc;
 import static io.trino.spi.type.Timestamps.NANOSECONDS_PER_MILLISECOND;
 import static io.trino.spi.type.Timestamps.PICOSECONDS_PER_NANOSECOND;
 import static io.trino.spi.type.Timestamps.roundDiv;
+import static java.lang.Math.addExact;
+import static java.lang.Math.floorDiv;
+import static java.lang.Math.floorMod;
 import static java.lang.Math.multiplyExact;
+import static java.lang.Math.toIntExact;
 
 public class TimestampTzNanosValueWriter
         extends PrimitiveValueWriter
 {
+    private static final long MIN_NANO_EPOCH_MILLIS = floorDiv(Long.MIN_VALUE, NANOSECONDS_PER_MILLISECOND);
+    private static final int MIN_NANO_OF_MILLI = toIntExact(floorMod(Long.MIN_VALUE, NANOSECONDS_PER_MILLISECOND));
+
     public TimestampTzNanosValueWriter(ValuesWriter valuesWriter, PrimitiveType parquetType)
     {
         super(parquetType, valuesWriter);
@@ -80,7 +87,10 @@ public class TimestampTzNanosValueWriter
     private static long toNanos(Fixed12Block block, int position)
     {
         long epochMillis = unpackMillisUtc(block.getFixed12First(position));
-        return multiplyExact(epochMillis, NANOSECONDS_PER_MILLISECOND) +
-                roundDiv(block.getFixed12Second(position), PICOSECONDS_PER_NANOSECOND);
+        long nanosOfMilli = roundDiv(block.getFixed12Second(position), PICOSECONDS_PER_NANOSECOND);
+        if (epochMillis == MIN_NANO_EPOCH_MILLIS) {
+            return addExact(Long.MIN_VALUE, nanosOfMilli - MIN_NANO_OF_MILLI);
+        }
+        return addExact(multiplyExact(epochMillis, NANOSECONDS_PER_MILLISECOND), nanosOfMilli);
     }
 }

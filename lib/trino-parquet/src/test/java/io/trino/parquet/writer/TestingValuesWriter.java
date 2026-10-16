@@ -14,17 +14,22 @@
 package io.trino.parquet.writer;
 
 import io.trino.parquet.writer.valuewriter.ColumnDescriptorValuesWriter;
+import io.trino.parquet.writer.valuewriter.ValuesWriter;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongList;
 import org.apache.parquet.bytes.BytesInput;
 import org.apache.parquet.column.Encoding;
 
 import java.util.List;
 
 class TestingValuesWriter
+        extends ValuesWriter
         implements ColumnDescriptorValuesWriter
 {
     private final IntList values = new IntArrayList();
+    private final LongList longValues = new LongArrayList();
 
     @Override
     public long getBufferedSize()
@@ -57,6 +62,12 @@ class TestingValuesWriter
     }
 
     @Override
+    public String memUsageString(String prefix)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public void writeInteger(int v)
     {
         values.add(v);
@@ -70,8 +81,19 @@ class TestingValuesWriter
         }
     }
 
+    @Override
+    public void writeLong(long value)
+    {
+        longValues.add(value);
+    }
+
     List<Integer> getWrittenValues()
     {
         return values;
+    }
+
+    List<Long> getWrittenLongValues()
+    {
+        return longValues;
     }
 }

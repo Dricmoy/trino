@@ -57,12 +57,18 @@ import static io.trino.spi.type.TimeType.createTimeType;
 import static io.trino.spi.type.TimeZoneKey.UTC_KEY;
 import static io.trino.spi.type.TimestampType.createTimestampType;
 import static io.trino.spi.type.TimestampWithTimeZoneType.createTimestampWithTimeZoneType;
+import static io.trino.spi.type.Timestamps.NANOSECONDS_PER_MICROSECOND;
+import static io.trino.spi.type.Timestamps.NANOSECONDS_PER_MILLISECOND;
+import static io.trino.spi.type.Timestamps.PICOSECONDS_PER_NANOSECOND;
 import static io.trino.spi.type.TinyintType.TINYINT;
 import static io.trino.spi.type.TypeUtils.writeNativeValue;
 import static io.trino.spi.type.UuidType.UUID;
 import static io.trino.spi.type.VarbinaryType.VARBINARY;
 import static io.trino.spi.type.VarcharType.VARCHAR;
 import static java.lang.Float.floatToRawIntBits;
+import static java.lang.Math.floorDiv;
+import static java.lang.Math.floorMod;
+import static java.lang.Math.toIntExact;
 import static java.util.Collections.nCopies;
 import static java.util.Collections.singletonList;
 import static org.apache.parquet.schema.LogicalTypeAnnotation.TimeUnit.MICROS;
@@ -78,6 +84,21 @@ final class TestPrimitiveValueWriter
     private static final List<Integer> MAX_DICTIONARY_PAGE_SIZES = ImmutableList.of(64, 1048576);
     // boolean values are written in chunks of 64 bits, so counts either side of a chunk boundary are covered
     private static final List<Integer> REPEATED_COUNTS = ImmutableList.of(2, 8, 65, 130);
+
+    @Test
+    void testTimestampNanosBoundaryValues()
+    {
+        assertTimestampNanosBoundaryValues(
+                createTimestampType(9),
+                false,
+                timestampFromNanos(Long.MIN_VALUE),
+                timestampFromNanos(Long.MAX_VALUE));
+        assertTimestampNanosBoundaryValues(
+                createTimestampWithTimeZoneType(9),
+                true,
+                timestampWithTimeZoneFromNanos(Long.MIN_VALUE),
+                timestampWithTimeZoneFromNanos(Long.MAX_VALUE));
+    }
 
     @Test
     void testRepeatedBlockMatchesValueBlock()
@@ -193,6 +214,33 @@ final class TestPrimitiveValueWriter
             writeNativeValue(type, blockBuilder, value);
         }
         return blockBuilder.build();
+    }
+
+    private static void assertTimestampNanosBoundaryValues(Type type, boolean adjustedToUtc, Object minValue, Object maxValue)
+    {
+        PrimitiveType parquetType = Types.optional(INT64)
+                .as(LogicalTypeAnnotation.timestampType(adjustedToUtc, NANOS))
+                .named("column");
+        TestingValuesWriter valuesWriter = new TestingValuesWriter();
+        try (PrimitiveValueWriter writer = getValueWriter(valuesWriter, type, parquetType, Optional.empty())) {
+            writer.write(createBlock(type, ImmutableList.of(minValue, maxValue)));
+        }
+        assertThat(valuesWriter.getWrittenLongValues()).containsExactly(Long.MIN_VALUE, Long.MAX_VALUE);
+    }
+
+    private static LongTimestamp timestampFromNanos(long epochNanos)
+    {
+        return new LongTimestamp(
+                floorDiv(epochNanos, NANOSECONDS_PER_MICROSECOND),
+                toIntExact(floorMod(epochNanos, NANOSECONDS_PER_MICROSECOND) * PICOSECONDS_PER_NANOSECOND));
+    }
+
+    private static LongTimestampWithTimeZone timestampWithTimeZoneFromNanos(long epochNanos)
+    {
+        return LongTimestampWithTimeZone.fromEpochMillisAndFraction(
+                floorDiv(epochNanos, NANOSECONDS_PER_MILLISECOND),
+                toIntExact(floorMod(epochNanos, NANOSECONDS_PER_MILLISECOND) * PICOSECONDS_PER_NANOSECOND),
+                UTC_KEY);
     }
 
     private static List<TestCase> testCases()
